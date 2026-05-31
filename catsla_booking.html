@@ -344,10 +344,11 @@ let selDate = '', selType = '', selSlots = [], busyH = {}, bufSlots = [], gcalBu
 function makeLabels() {
   const arr = [];
   for (let h = 9; h <= 22; h++) {
-    arr.push({ h, m: 0, label: `${pad(h)}:00–${pad(h+1)}:00` });
-    if (h < 22) arr.push({ h, m: 30, label: `${pad(h)}:30–${pad(h+1)}:30` });
+    arr.push({ h, m: 0, label: `${pad(h)}:00–${pad(h)}:30` });
+    if (h < 22 || true) arr.push({ h, m: 30, label: `${pad(h)}:30–${pad(h+1)}:00` });
   }
-  return arr;
+  // 最後一格到 23:00
+  return arr.filter(s => s.h < 22 || (s.h===22 && s.m===0) || (s.h===22 && s.m===30));
 }
 const ALL_SLOTS = makeLabels();
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -358,8 +359,10 @@ function minToKey(min){ const h=Math.floor(min/60); const m=min%60; return slotK
 // === GCAL ===
 async function loadGcal(y, m) {
   document.getElementById('gcal-note').textContent = '正在讀取行事曆... ⏳';
-  const start = new Date(y,m,1).toISOString();
-  const end   = new Date(y,m+1,0,23,59).toISOString();
+  // 用台灣時區 UTC+8
+  const pad2 = n => String(n).padStart(2,'0');
+  const start = `${y}-${pad2(m+1)}-01T00:00:00+08:00`;
+  const end   = `${y}-${pad2(m+1)}-${pad2(new Date(y,m+1,0).getDate())}T23:59:59+08:00`;
   const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GCAL_ID)}/events?key=${GCAL_KEY}&timeMin=${start}&timeMax=${end}&singleEvents=true&orderBy=startTime&fields=items(start,end,summary)`;
   try {
     const r = await fetch(url);
@@ -544,6 +547,13 @@ function chkEmail(){
 }
 
 function goTo(step){
+  // 從 step1 到 step2：驗證已選日期、類型、格數為偶數
+  if(step===2){
+    if(!selDate){ alert('請先選擇日期！'); return; }
+    if(!selType){ alert('請先選擇使用類型！'); return; }
+    if(selSlots.length===0){ alert('請選擇時段！'); return; }
+    if(selSlots.length % 2 !== 0){ alert('請選擇完整的小時數（每 2 格 = 1 小時），目前選了 ' + selSlots.length + ' 格，請再加選或取消一格。'); return; }
+  }
   if(step===4) fillSum();
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('act'));
   document.querySelectorAll('.step').forEach((t,i)=>{
