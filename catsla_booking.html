@@ -359,10 +359,13 @@ function minToKey(min){ const h=Math.floor(min/60); const m=min%60; return slotK
 // === GCAL ===
 async function loadGcal(y, m) {
   document.getElementById('gcal-note').textContent = '正在讀取行事曆... ⏳';
-  // 用台灣時區 UTC+8
-  const pad2 = n => String(n).padStart(2,'0');
-  const start = `${y}-${pad2(m+1)}-01T00:00:00+08:00`;
-  const end   = `${y}-${pad2(m+1)}-${pad2(new Date(y,m+1,0).getDate())}T23:59:59+08:00`;
+  // 用 UTC 時間（台灣 UTC+8，所以減8小時換成 UTC 前一天16:00 到當月最後一天15:59）
+  const startUTC = new Date(y, m, 1, 0, 0, 0);
+  startUTC.setHours(startUTC.getHours() - 8);
+  const endUTC = new Date(y, m+1, 0, 23, 59, 59);
+  endUTC.setHours(endUTC.getHours() - 8);
+  const start = startUTC.toISOString();
+  const end   = endUTC.toISOString();
   const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GCAL_ID)}/events?key=${GCAL_KEY}&timeMin=${start}&timeMax=${end}&singleEvents=true&orderBy=startTime&fields=items(start,end,summary)`;
   try {
     const r = await fetch(url);
@@ -372,14 +375,16 @@ async function loadGcal(y, m) {
     const bufByDate = {};   // 換場緩衝格
 
     (data.items||[]).forEach(ev => {
-      const d = (ev.start.dateTime||ev.start.date).slice(0,10);
-      if (!byDate[d]) byDate[d] = new Set();
-      if (!bufByDate[d]) bufByDate[d] = new Set();
-
       if (!ev.start.dateTime) return; // 全天事件略過
 
-      const [sh,sm] = ev.start.dateTime.slice(11,16).split(':').map(Number);
-      const [eh,em] = ev.end.dateTime.slice(11,16).split(':').map(Number);
+      // 轉成台灣時間 UTC+8
+      const twStart = new Date(new Date(ev.start.dateTime).getTime() + 8*3600*1000);
+      const twEnd   = new Date(new Date(ev.end.dateTime).getTime()   + 8*3600*1000);
+      const d = twStart.toISOString().slice(0,10);
+      if (!byDate[d]) byDate[d] = new Set();
+      if (!bufByDate[d]) bufByDate[d] = new Set();
+      const sh = twStart.getUTCHours(), sm = twStart.getUTCMinutes();
+      const eh = twEnd.getUTCHours(),   em = twEnd.getUTCMinutes();
 
       // 起始分鐘：無條件進位到下一個30分鐘格
       const startMin = sh*60 + sm;
