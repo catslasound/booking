@@ -332,16 +332,15 @@ textarea.fi{resize:vertical;min-height:65px;}
 <script>
 // === CONFIG ===
 const GCAL_ID = 'catslasound@gmail.com';
-// 請填入您的 Google Calendar API Key：
 const GCAL_KEY = 'AIzaSyC9lZols7uYm-kO3Cmo0G9GnUY7BAdwahI';
 
 // === STATE ===
 let calY, calM;
 const now = new Date();
 calY = now.getFullYear(); calM = now.getMonth();
-let selDate = '', selType = '', selSlots = [], busyH = {}, bufSlots = [];
+let selDate = '', selType = '', selSlots = [], busyH = {}, bufSlots = [], gcalBufSlots = {};
 
-// 30-min time labels from 09:00 to 22:30
+// 30-min slots 09:00 ~ 22:30
 function makeLabels() {
   const arr = [];
   for (let h = 9; h <= 22; h++) {
@@ -352,33 +351,64 @@ function makeLabels() {
 }
 const ALL_SLOTS = makeLabels();
 function pad(n){ return String(n).padStart(2,'0'); }
-function slotKey(h,m){ return h*2 + (m===30?1:0); }
+function slotKey(h,m){ return (h-9)*2 + (m===30?1:0); }
+function keyToMin(k){ return (9 + Math.floor(k/2))*60 + (k%2===1?30:0); }
+function minToKey(min){ const h=Math.floor(min/60); const m=min%60; return slotKey(h,m); }
 
 // === GCAL ===
 async function loadGcal(y, m) {
   document.getElementById('gcal-note').textContent = '正在讀取行事曆... ⏳';
   const start = new Date(y,m,1).toISOString();
   const end   = new Date(y,m+1,0,23,59).toISOString();
-  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GCAL_ID)}/events?key=${GCAL_KEY}&timeMin=${start}&timeMax=${end}&singleEvents=true&orderBy=startTime&fields=items(start,end)`;
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(GCAL_ID)}/events?key=${GCAL_KEY}&timeMin=${start}&timeMax=${end}&singleEvents=true&orderBy=startTime&fields=items(start,end,summary)`;
   try {
     const r = await fetch(url);
     if (!r.ok) throw 0;
     const data = await r.json();
-    const byDate = {};
+    const byDate = {};      // 實際被佔用的 30min 格
+    const bufByDate = {};   // 換場緩衝格
+
     (data.items||[]).forEach(ev => {
       const d = (ev.start.dateTime||ev.start.date).slice(0,10);
       if (!byDate[d]) byDate[d] = new Set();
-      // mark every 30-min block
-      const [sh,sm] = ev.start.dateTime ? ev.start.dateTime.slice(11,16).split(':').map(Number) : [0,0];
-      const [eh,em] = ev.end.dateTime   ? ev.end.dateTime.slice(11,16).split(':').map(Number)   : [23,0];
-      let cur = sh*60+(sm<30?0:30);
-      const end2 = eh*60+(em>0?30:0);
-      while(cur < end2 && cur < 23*60) { byDate[d].add(cur); cur+=30; }
+      if (!bufByDate[d]) bufByDate[d] = new Set();
+
+      if (!ev.start.dateTime) return; // 全天事件略過
+
+      const [sh,sm] = ev.start.dateTime.slice(11,16).split(':').map(Number);
+      const [eh,em] = ev.end.dateTime.slice(11,16).split(':').map(Number);
+
+      // 起始分鐘：無條件進位到下一個30分鐘格
+      const startMin = sh*60 + sm;
+      const endMin   = eh*60 + em;
+
+      // 標記實際佔用格
+      let cur = Math.floor(startMin/30)*30;
+      while(cur < endMin) { byDate[d].add(cur); cur += 30; }
+
+      // 判斷類型抓緩衝
+      const summary = (ev.summary||'').toLowerCase();
+      const isPractice = summary.includes('練團') || summary.includes('practice');
+      const bufMin = isPractice ? 30 : 60; // 練團30分鐘、其他（彩排）60分鐘
+
+      // 前緩衝
+      for(let b = bufMin; b > 0; b -= 30) {
+        const bMin = startMin - b;
+        if(bMin >= 9*60) bufByDate[d].add(Math.floor(bMin/30)*30);
+      }
+      // 後緩衝
+      for(let b = 30; b <= bufMin; b += 30) {
+        const bMin = endMin + b - 30;
+        if(bMin < 23*60) bufByDate[d].add(Math.floor(bMin/30)*30);
+      }
     });
+
     busyH = byDate;
+    gcalBufSlots = bufByDate;
     document.getElementById('gcal-note').textContent = '✅ 行事曆已同步，灰色時段已被預約';
   } catch(e) {
     busyH = {};
+    gcalBufSlots = {};
     document.getElementById('gcal-note').textContent = '⚠️ 無法讀取即時行事曆，請直接送出，我們將確認後聯繫。';
   }
   renderCal();
@@ -397,13 +427,12 @@ function renderCal() {
   for(let d=1;d<=tot;d++){
     const ds=`${calY}-${pad(calM+1)}-${pad(d)}`;
     const past=new Date(calY,calM,d)<new Date(now.getFullYear(),now.getMonth(),now.getDate());
-    const busy=(busyH[ds]||new Set()).size>=26; // full day ~= 13h*2
     const tod=ds===todStr, sel=selDate===ds;
     let c='cd';
-    if(past||busy) c+=' dis'+(busy?' busy':'');
+    if(past) c+=' dis';
     else if(sel) c+=' sel';
     else if(tod) c+=' tod';
-    const cl=(past||busy)?'':` onclick="selD('${ds}')"`;
+    const cl=past?'':` onclick="selD('${ds}')"`;
     html+=`<div class="${c}"${cl}>${d}</div>`;
   }
   document.getElementById('cg').innerHTML=html;
@@ -413,27 +442,25 @@ function chMo(d){ calM+=d; if(calM>11){calM=0;calY++;} if(calM<0){calM=11;calY--
 function selD(d){ selDate=d; selSlots=[]; bufSlots=[]; renderCal(); }
 
 // === SLOTS ===
-function setType(t){ selType=t; selSlots=[]; bufSlots=[]; renderCal(); }
+function setType(t){ selType=t; selSlots=[]; bufSlots=[]; renderSlots(); }
 
 function computeBuf(){
   bufSlots=[];
   if(!selSlots.length||!selType) return;
   const bufM = selType==='彩排'?60:30;
-  const minK=Math.min(...selSlots), maxK=Math.max(...selSlots);
-  // buf before
-  for(let i=1;i<=bufM/30;i++){
-    const k=minK-i; if(k>=slotKey(9,0)) bufSlots.push(k);
+  const minK=Math.min(...selSlots);
+  const maxK=Math.max(...selSlots);
+  const startMin = keyToMin(minK);
+  const endMin   = keyToMin(maxK) + 60; // 每格1小時
+  // 前緩衝
+  for(let b=30; b<=bufM; b+=30){
+    const bMin = startMin - b;
+    if(bMin >= 9*60) bufSlots.push(minToKey(bMin));
   }
-  // buf after (maxK is the START of last slot, end = maxK+1 slot)
-  for(let i=1;i<=bufM/30;i++){
-    const k=maxK+selSlots.length+i-1+1; if(k<=slotKey(22,30)) bufSlots.push(k);
-  }
-  // simpler: buf after the END of selection
-  bufSlots=[];
-  const endK=maxK+1;
-  for(let i=1;i<=bufM/30;i++){
-    const kb=minK-i; if(kb>=0) bufSlots.push(kb);
-    const ka=endK+i-1; if(ka<=44) bufSlots.push(ka);
+  // 後緩衝
+  for(let b=30; b<=bufM; b+=30){
+    const bMin = endMin + b - 30;
+    if(bMin < 23*60) bufSlots.push(minToKey(bMin));
   }
 }
 
@@ -443,34 +470,64 @@ function renderSlots(){
   const sumEl=document.getElementById('sel-summary');
   if(!selDate||!selType){ hint.textContent='請先選擇使用類型與日期'; wrap.innerHTML=''; sumEl.textContent=''; return; }
   hint.textContent='';
-  const dayBusy=busyH[selDate]||new Set();
+  const dayBusy = busyH[selDate]||new Set();
+  const dayGcalBuf = gcalBufSlots[selDate]||new Set();
   computeBuf();
+
+  // 只顯示整點和半點開始的1小時格
+  // 整點：00, 半點：30 → 合法起始
   let html='';
-  ALL_SLOTS.forEach(({h,m,label})=>{
-    const k=slotKey(h,m);
-    const bMin=h*60+m;
-    const isBusy=dayBusy.has(bMin);
-    const isSel=selSlots.includes(k);
-    const isBuf=bufSlots.includes(k)&&!isSel;
-    if(isBusy) html+=`<div class="slot busy">${label}</div>`;
-    else if(isBuf) html+=`<div class="slot buf">${label}<br><small>緩衝</small></div>`;
-    else {
-      const sc=isSel?' sel':'';
-      html+=`<div class="slot${sc}" onclick="togSlot(${k})">${label}</div>`;
+  for(let h=9; h<=21; h++){
+    for(let m=0; m<60; m+=30){
+      const startMin = h*60+m;
+      const endH = m===30 ? h+1 : h+1;
+      const endM = m===30 ? 0 : 30; // 錯：要做1小時
+      // 每格是1小時
+      const actualEndMin = startMin + 60;
+      const actualEndH = Math.floor(actualEndMin/60);
+      const actualEndMm = actualEndMin%60;
+      if(actualEndMin > 23*60) continue; // 超過23:00不顯示
+
+      const label = `${pad(h)}:${m===0?'00':'30'}–${pad(actualEndH)}:${actualEndMm===0?'00':'30'}`;
+      const k = slotKey(h,m);
+
+      // 檢查這個1小時區間內是否有任何30min被佔用
+      const isBusy = dayBusy.has(startMin) || dayBusy.has(startMin+30);
+      const isGcalBuf = !isBusy && (dayGcalBuf.has(startMin) || dayGcalBuf.has(startMin+30));
+      const isSel = selSlots.includes(k);
+      const isUserBuf = !isSel && bufSlots.includes(k);
+
+      if(isBusy){
+        html+=`<div class="slot busy">${label}</div>`;
+      } else if(isGcalBuf){
+        html+=`<div class="slot buf">${label}<br><small>換場緩衝</small></div>`;
+      } else if(isUserBuf){
+        html+=`<div class="slot buf">${label}<br><small>換場緩衝</small></div>`;
+      } else {
+        html+=`<div class="slot${isSel?' sel':''}" onclick="togSlot(${k})">${label}</div>`;
+      }
     }
-  });
+  }
   wrap.innerHTML=html;
-  // summary
+
   if(selSlots.length){
-    const sLabels=selSlots.map(k=>ALL_SLOTS[k]?.label||'').join('、');
-    const hrs=selSlots.length; // each slot = 1hr
-    sumEl.textContent=`已選 ${hrs} 小時：${sLabels}`;
+    const hrs=selSlots.length;
+    const firstK=Math.min(...selSlots);
+    const lastK=Math.max(...selSlots);
+    const startLbl=`${pad(9+Math.floor(firstK/2))}:${firstK%2===0?'00':'30'}`;
+    const endMin2=keyToMin(lastK)+60;
+    const endLbl=`${pad(Math.floor(endMin2/60))}:${endMin2%60===0?'00':'30'}`;
+    sumEl.textContent=`已選 ${hrs} 小時：${startLbl}–${endLbl}`;
   } else { sumEl.textContent=''; }
 }
 
 function togSlot(k){
-  if(selSlots.includes(k)) selSlots=selSlots.filter(s=>s!==k);
-  else { selSlots.push(k); selSlots.sort((a,b)=>a-b); }
+  if(selSlots.includes(k)) {
+    selSlots=selSlots.filter(s=>s!==k);
+  } else {
+    selSlots.push(k);
+    selSlots.sort((a,b)=>a-b);
+  }
   computeBuf(); renderSlots();
 }
 
@@ -508,10 +565,14 @@ function fillSum(){
   const hrs=selSlots.length;
   const rate=selType==='彩排'?1200:600;
   const tot=hrs*rate;
-  const slotStr=selSlots.map(k=>ALL_SLOTS[k]?.label||'').join('、');
+  const firstK=selSlots.length?Math.min(...selSlots):0;
+  const lastK=selSlots.length?Math.max(...selSlots):0;
+  const startLbl=selSlots.length?`${pad(9+Math.floor(firstK/2))}:${firstK%2===0?'00':'30'}`:'—';
+  const endMin2=selSlots.length?keyToMin(lastK)+60:0;
+  const endLbl=selSlots.length?`${pad(Math.floor(endMin2/60))}:${endMin2%60===0?'00':'30'}`:'—';
   document.getElementById('s-type').textContent=selType||'—';
   document.getElementById('s-date').textContent=selDate||'—';
-  document.getElementById('s-slots').textContent=slotStr||'—';
+  document.getElementById('s-slots').textContent=selSlots.length?`${startLbl}–${endLbl}`:'—';
   document.getElementById('s-hrs').textContent=hrs?`${hrs} 小時`:'—';
   document.getElementById('s-inst').textContent=insts;
   document.getElementById('s-kb').textContent=kb;
@@ -525,14 +586,17 @@ function fillSum(){
 function submit(){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('act'));
   document.querySelectorAll('.step').forEach(t=>t.classList.remove('act','done'));
-  const slotStr=selSlots.map(k=>ALL_SLOTS[k]?.label||'').join('、');
+  const firstK=selSlots.length?Math.min(...selSlots):0;
+  const lastK=selSlots.length?Math.max(...selSlots):0;
+  const startLbl=selSlots.length?`${pad(9+Math.floor(firstK/2))}:${firstK%2===0?'00':'30'}`:'—';
+  const endMin2=selSlots.length?keyToMin(lastK)+60:0;
+  const endLbl=selSlots.length?`${pad(Math.floor(endMin2/60))}:${endMin2%60===0?'00':'30'}`:'—';
   document.getElementById('sc-type').textContent=selType||'—';
   document.getElementById('sc-date').textContent=selDate||'—';
-  document.getElementById('sc-slots').textContent=slotStr||'—';
+  document.getElementById('sc-slots').textContent=selSlots.length?`${startLbl}–${endLbl}`:'—';
   document.getElementById('sc-email').textContent=document.getElementById('f-email').value||'—';
   document.getElementById('p-ok').classList.add('act');
   window.scrollTo({top:0,behavior:'smooth'});
-  // TODO: 串接 Google Sheets / Formspree 等後端
 }
 
 function reset(){
