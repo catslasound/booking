@@ -171,7 +171,7 @@ textarea.fi{resize:vertical;min-height:65px;}
     <div class="cg" id="cg"></div>
   </div>
 
-  <div class="sec"><i class="ti ti-clock"></i>選擇時段（每格半小時，可從半點開始）</div>
+  <div class="sec"><i class="ti ti-clock"></i>選擇時段（每格 1 小時，可從半點開始）</div>
   <div class="slots-wrap">
     <div class="slot-lbl" id="slot-hint">請先選擇使用類型與日期</div>
     <div class="slots" id="slots"></div>
@@ -344,11 +344,12 @@ let selDate = '', selType = '', selSlots = [], busyH = {}, bufSlots = [], gcalBu
 function makeLabels() {
   const arr = [];
   for (let h = 9; h <= 22; h++) {
-    arr.push({ h, m: 0, label: `${pad(h)}:00–${pad(h)}:30` });
-    if (h < 22 || true) arr.push({ h, m: 30, label: `${pad(h)}:30–${pad(h+1)}:00` });
+    const hStr = String(h).padStart(2,'0');
+    const hNextStr = String(h+1).padStart(2,'0');
+    arr.push({ h, m: 0,  label: hStr+':00–'+hStr+':30' });
+    arr.push({ h, m: 30, label: hStr+':30–'+hNextStr+':00' });
   }
-  // 最後一格到 23:00
-  return arr.filter(s => s.h < 22 || (s.h===22 && s.m===0) || (s.h===22 && s.m===30));
+  return arr.filter(s => !(s.h===22 && s.m===30) && !(s.h > 22));
 }
 const ALL_SLOTS = makeLabels();
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -482,49 +483,30 @@ function renderSlots(){
   const dayGcalBuf = gcalBufSlots[selDate]||new Set();
   computeBuf();
 
-  // 只顯示整點和半點開始的1小時格
-  // 整點：00, 半點：30 → 合法起始
   let html='';
-  for(let h=9; h<=21; h++){
-    for(let m=0; m<60; m+=30){
-      const startMin = h*60+m;
-      const endH = m===30 ? h+1 : h+1;
-      const endM = m===30 ? 0 : 30; // 錯：要做1小時
-      // 每格是1小時
-      const actualEndMin = startMin + 60;
-      const actualEndH = Math.floor(actualEndMin/60);
-      const actualEndMm = actualEndMin%60;
-      if(actualEndMin > 23*60) continue; // 超過23:00不顯示
-
-      const label = `${pad(h)}:${m===0?'00':'30'}–${pad(actualEndH)}:${actualEndMm===0?'00':'30'}`;
-      const k = slotKey(h,m);
-
-      // 檢查這個1小時區間內是否有任何30min被佔用
-      const isBusy = dayBusy.has(startMin) || dayBusy.has(startMin+30);
-      const isGcalBuf = !isBusy && (dayGcalBuf.has(startMin) || dayGcalBuf.has(startMin+30));
-      const isSel = selSlots.includes(k);
-      const isUserBuf = !isSel && bufSlots.includes(k);
-
-      if(isBusy){
-        html+=`<div class="slot busy">${label}</div>`;
-      } else if(isGcalBuf){
-        html+=`<div class="slot buf">${label}<br><small>換場緩衝</small></div>`;
-      } else if(isUserBuf){
-        html+=`<div class="slot buf">${label}<br><small>換場緩衝</small></div>`;
-      } else {
-        html+=`<div class="slot${isSel?' sel':''}" onclick="togSlot(${k})">${label}</div>`;
-      }
+  ALL_SLOTS.forEach(({h, m, label}, k) => {
+    const startMin = h*60+m;
+    const isBusy = dayBusy.has(startMin) || dayGcalBuf.has(startMin);
+    const isSel = selSlots.includes(k);
+    const isBuf = bufSlots.includes(k) && !isSel;
+    if(isBusy){
+      html+=`<div class="slot busy">${label}</div>`;
+    } else if(isBuf){
+      html+=`<div class="slot buf">${label}<br><small>緩衝</small></div>`;
+    } else {
+      const sc=isSel?' sel':'';
+      html+=`<div class="slot${sc}" onclick="togSlot(${k})">${label}</div>`;
     }
-  }
+  });
   wrap.innerHTML=html;
 
   if(selSlots.length){
-    const hrs=selSlots.length;
+    const totalSlots=selSlots.length;
+    const hrs=totalSlots/2;
     const firstK=Math.min(...selSlots);
     const lastK=Math.max(...selSlots);
-    const startLbl=`${pad(9+Math.floor(firstK/2))}:${firstK%2===0?'00':'30'}`;
-    const endMin2=keyToMin(lastK)+60;
-    const endLbl=`${pad(Math.floor(endMin2/60))}:${endMin2%60===0?'00':'30'}`;
+    const startLbl=ALL_SLOTS[firstK]?.label.split('–')[0]||'';
+    const endLbl=ALL_SLOTS[lastK]?.label.split('–')[1]||'';
     sumEl.textContent=`已選 ${hrs} 小時：${startLbl}–${endLbl}`;
   } else { sumEl.textContent=''; }
 }
@@ -577,7 +559,7 @@ function fillSum(){
   const drum=document.querySelector('input[name=drum]:checked')?.value||'—';
   const dd=document.getElementById('f-drum').value;
   const drumStr=drum==='自帶'&&dd?`自帶（${dd}）`:drum;
-  const hrs=selSlots.length;
+  const hrs=selSlots.length/2; // 每格30分鐘
   const rate=selType==='彩排'?1200:600;
   const tot=hrs*rate;
   const firstK=selSlots.length?Math.min(...selSlots):0;
