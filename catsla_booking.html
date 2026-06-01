@@ -472,19 +472,20 @@ function computeBuf(){
   const minK=Math.min(...selSlots);
   const maxK=Math.max(...selSlots);
   const startMin = keyToMin(minK);
-  const endMin   = keyToMin(maxK) + 30; // 每格1小時
-  // 前緩衝
+  const endMin   = keyToMin(maxK) + 30;
+  const dayBusy  = busyH[selDate]||new Set();
+
+  // 前緩衝：只有當緊鄰前方有已預約格時才擋
   for(let b=30; b<=bufM; b+=30){
     const bMin = startMin - b;
-    if(bMin >= 9*60) bufSlots.push(minToKey(bMin));
+    if(bMin >= 9*60 && dayBusy.has(bMin)) bufSlots.push(minToKey(bMin));
   }
-  // 後緩衝
+  // 後緩衝：只有當緊鄰後方有已預約格時才擋
   for(let b=30; b<=bufM; b+=30){
     const bMin = endMin + b - 30;
-    if(bMin < 23*60) bufSlots.push(minToKey(bMin));
+    if(bMin < 23*60 && dayBusy.has(bMin)) bufSlots.push(minToKey(bMin));
   }
 }
-
 function renderSlots(){
   const hint=document.getElementById('slot-hint');
   const wrap=document.getElementById('slots');
