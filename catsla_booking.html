@@ -401,8 +401,8 @@ async function loadGcal(y, m) {
       const eh = twEnd.getUTCHours(),   em = twEnd.getUTCMinutes();
 
       // 起始分鐘：無條件進位到下一個30分鐘格
-      const startMin = sh*60 + sm;
-      const endMin   = eh*60 + em;
+      const startMin = sh*30 + sm;
+      const endMin   = eh*30 + em;
 
       // 標記實際佔用格
       let cur = Math.floor(startMin/30)*30;
