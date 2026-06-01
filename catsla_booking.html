@@ -610,7 +610,7 @@ function submit(){
   const firstK=selSlots.length?Math.min(...selSlots):0;
   const lastK=selSlots.length?Math.max(...selSlots):0;
   const startLbl=selSlots.length?`${pad(9+Math.floor(firstK/2))}:${firstK%2===0?'00':'30'}`:'—';
-  cconst endLbl = selSlots.length ? (ALL_SLOTS[lastK]?.label.split('–')[1] || '—') : '—';
+  const endLbl = selSlots.length ? (ALL_SLOTS[lastK]?.label.split('–')[1] || '—') : '—';
   document.getElementById('sc-type').textContent=selType||'—';
   document.getElementById('sc-date').textContent=selDate||'—';
   document.getElementById('sc-slots').textContent=selSlots.length?`${startLbl}–${endLbl}`:'—';
