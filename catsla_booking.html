@@ -168,6 +168,7 @@ textarea.fi{resize:vertical;min-height:65px;}
   </div>
 
   <div class="sec"><i class="ti ti-clock"></i>選擇時段（每格半小時，可從半點開始）</div>
+  <div class="note">目前開放預約時段為 09:00–00:00。若需要 00:00–09:00 的練團時段，請私訊 Instagram <a href="https://www.instagram.com/catslasound" target="_blank" style="color:var(--og-d);font-weight:700;">@catslasound</a></div>
   <div class="slots-wrap">
     <div class="slot-lbl" id="slot-hint">請先選擇使用類型與日期</div>
     <div class="slots" id="slots"></div>
@@ -352,16 +353,16 @@ const now = new Date();
 calY = now.getFullYear(); calM = now.getMonth();
 let selDate = '', selType = '', selSlots = [], busyH = {}, bufSlots = [], gcalBufSlots = {};
 
-// 30-min slots 09:00 ~ 22:30
+// 30-min slots 09:00 ~ 23:30 (last slot ends 00:00)
 function makeLabels() {
   const arr = [];
-  for (let h = 9; h <= 22; h++) {
+  for (let h = 9; h <= 23; h++) {
     const hStr = String(h).padStart(2,'0');
-    const hNextStr = String(h+1).padStart(2,'0');
+    const hNextStr = String((h+1)%24).padStart(2,'0');
     arr.push({ h, m: 0,  label: hStr+':00–'+hStr+':30' });
     arr.push({ h, m: 30, label: hStr+':30–'+hNextStr+':00' });
   }
-  return arr.filter(s => !(s.h===22 && s.m===30) && !(s.h > 22));
+  return arr;
 }
 const ALL_SLOTS = makeLabels();
 function pad(n){ return String(n).padStart(2,'0'); }
@@ -420,7 +421,7 @@ async function loadGcal(y, m) {
       // 後緩衝
       for(let b = 30; b <= bufMin; b += 30) {
         const bMin = endMin + b - 30;
-        if(bMin < 23*60) bufByDate[d].add(Math.floor(bMin/30)*30);
+        if(bMin < 24*60) bufByDate[d].add(Math.floor(bMin/30)*30);
       }
     });
 
@@ -467,24 +468,6 @@ function setType(t){ selType=t; selSlots=[]; bufSlots=[]; renderSlots(); }
 
 function computeBuf(){
   bufSlots=[];
-  if(!selSlots.length||!selType) return;
-  const bufM = selType==='彩排'?60:30;
-  const minK=Math.min(...selSlots);
-  const maxK=Math.max(...selSlots);
-  const startMin = keyToMin(minK);
-  const endMin   = keyToMin(maxK) + 30;
-  const dayBusy  = busyH[selDate]||new Set();
-
-  // 前緩衝：只有當緊鄰前方有已預約格時才擋
-  for(let b=30; b<=bufM; b+=30){
-    const bMin = startMin - b;
-    if(bMin >= 9*60 && dayBusy.has(bMin)) bufSlots.push(minToKey(bMin));
-  }
-  // 後緩衝：只有當緊鄰後方有已預約格時才擋
-  for(let b=30; b<=bufM; b+=30){
-    const bMin = endMin + b - 30;
-    if(bMin < 23*60 && dayBusy.has(bMin)) bufSlots.push(minToKey(bMin));
-  }
 }
 function renderSlots(){
   const hint=document.getElementById('slot-hint');
@@ -499,9 +482,9 @@ function renderSlots(){
   let html='';
   ALL_SLOTS.forEach(({h, m, label}, k) => {
     const startMin = h*60+m;
-    const isBusy = dayBusy.has(startMin) || dayGcalBuf.has(startMin);
+    const isBusy = dayBusy.has(startMin);
     const isSel = selSlots.includes(k);
-    const isBuf = bufSlots.includes(k) && !isSel;
+    const isBuf = dayGcalBuf.has(h*60+m) && !isSel && !isBusy;
     if(isBusy){
       html+=`<div class="slot busy">${label}</div>`;
     } else if(isBuf){
