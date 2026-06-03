@@ -399,7 +399,7 @@ async function loadGcal(y, m) {
       if (!bufByDate[d]) bufByDate[d] = new Set();
       const sh = twStart.toLocaleString('en',{timeZone:'Asia/Taipei',hour:'2-digit',hour12:false})|0;
       const sm = twStart.getMinutes();
-      const eh = twEnd.toLocaleString('en',{timeZone:'Asia/Taipei',hour:'2-digit',hour12:false})|0;
+      const eh = twEnd.toLocaleDateString('sv',{timeZone:'Asia/Taipei'}) > d ? 24 : (twEnd.toLocaleString('en',{timeZone:'Asia/Taipei',hour:'2-digit',hour12:false})|0);
       const em = twEnd.getMinutes();
 
       // 起始分鐘：無條件進位到下一個30分鐘格
