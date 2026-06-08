@@ -412,6 +412,8 @@ async function loadGcal(y, m) {
 
       // 判斷類型抓緩衝
       const summary = (ev.summary||'').toLowerCase();
+      Logger.log && Logger.log(summary);
+console.log('summary:', summary, 'isPractice:', isPractice);
       const isPractice = summary.includes('練團') || summary.includes('practice');
       const bufMin = isPractice ? 30 : 60; // 練團30分鐘、其他（彩排）60分鐘
 
