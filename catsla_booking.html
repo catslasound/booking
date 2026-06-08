@@ -344,7 +344,7 @@ textarea.fi{resize:vertical;min-height:65px;}
 
 <script>
 // === CONFIG ===
-const GCAL_ID = 'catslasound@gmail.com';
+const GCAL_ID = '6c980521c9f506b615cf4972efbbcbd57632d3c077060fa53bfdd468abeb5458@group.calendar.google.com';
 const GCAL_KEY = 'AIzaSyC9lZols7uYm-kO3Cmo0G9GnUY7BAdwahI';
 
 // === STATE ===
@@ -389,7 +389,6 @@ async function loadGcal(y, m) {
     const bufByDate = {};   // 換場緩衝格
 
     (data.items||[]).forEach(ev => {
-      console.log('RAW EV:', JSON.stringify(ev));
       if (!ev.start.dateTime) return; // 全天事件略過
 
       // 直接用台灣時區解析（行事曆回傳已含 +08:00）
@@ -413,11 +412,9 @@ async function loadGcal(y, m) {
 
       // 判斷類型抓緩衝
       const summary = ev.summary || '';
-      console.log('EVENT:', summary);
       const isPractice = summary.includes('練團') || summary.includes('practice');
       const isHoliday = summary.includes('公休');
       const bufMin = isHoliday ? 0 : (isPractice ? 30 : 60);
-      console.log('isPractice:', isPractice, 'isHoliday:', isHoliday, 'bufMin:', bufMin);
 
       // 前後緩衝
       if(bufMin > 0) {
