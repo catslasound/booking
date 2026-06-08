@@ -411,19 +411,23 @@ async function loadGcal(y, m) {
       while(cur < endMin) { byDate[d].add(cur); cur += 30; }
 
       // 判斷類型抓緩衝
-      const summary = (ev.summary||'').toLowerCase();
+      const summary = ev.summary || '';
+      console.log('EVENT:', summary);
       const isPractice = summary.includes('練團') || summary.includes('practice');
-      const bufMin = isPractice ? 30 : 60; // 練團30分鐘、其他（彩排）60分鐘
+      const isHoliday = summary.includes('公休');
+      const bufMin = isHoliday ? 0 : (isPractice ? 30 : 60);
+      console.log('isPractice:', isPractice, 'isHoliday:', isHoliday, 'bufMin:', bufMin);
 
-      // 前緩衝
-      for(let b = bufMin; b > 0; b -= 30) {
-        const bMin = startMin - b;
-        if(bMin >= 9*60) bufByDate[d].add(Math.floor(bMin/30)*30);
-      }
-      // 後緩衝
-      for(let b = 30; b <= bufMin; b += 30) {
-        const bMin = endMin + b - 30;
-        if(bMin < 24*60) bufByDate[d].add(Math.floor(bMin/30)*30);
+      // 前後緩衝
+      if(bufMin > 0) {
+        for(let b = bufMin; b > 0; b -= 30) {
+          const bMin = startMin - b;
+          if(bMin >= 9*60) bufByDate[d].add(Math.floor(bMin/30)*30);
+        }
+        for(let b = 30; b <= bufMin; b += 30) {
+          const bMin = endMin + b - 30;
+          if(bMin < 24*60) bufByDate[d].add(Math.floor(bMin/30)*30);
+        }
       }
     });
 
