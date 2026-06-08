@@ -389,6 +389,7 @@ async function loadGcal(y, m) {
     const bufByDate = {};   // 換場緩衝格
 
     (data.items||[]).forEach(ev => {
+      console.log('RAW EV:', JSON.stringify(ev));
       if (!ev.start.dateTime) return; // 全天事件略過
 
       // 直接用台灣時區解析（行事曆回傳已含 +08:00）
